@@ -1,0 +1,12 @@
+streamlit
+psycopg2-binary
+python-dotenv
+pytz
+folium
+streamlit-folium
+pandas
+openpyxl
+pyxlsb
+requests
+sqlalchemy
+plotly>=5.0.0
