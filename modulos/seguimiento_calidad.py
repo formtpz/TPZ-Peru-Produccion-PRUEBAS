@@ -234,20 +234,33 @@ def render():
     if df_errores.empty:
         st.info("No se encontraron registros de tipos de error en el período seleccionado.")
     else:
-        # --- Gráfico de barras simple: frecuencia total por tipo de error (Pareto) ---
+        # --- Gráfico de barras simple: porcentaje de cada tipo de error ---
         errores_totales = df_errores.groupby('tipo_error')['conteo'].sum().reset_index()
-        errores_totales = errores_totales.sort_values('conteo', ascending=False)
+        total_errores = errores_totales['conteo'].sum()
+        errores_totales['porcentaje'] = (
+            (errores_totales['conteo'] / total_errores * 100) if total_errores > 0 else 0
+        ).round(1)
+        errores_totales = errores_totales.sort_values('porcentaje', ascending=False)
 
         fig_pareto = px.bar(
             errores_totales,
             x='tipo_error',
-            y='conteo',
-            title='Frecuencia total de tipos de error (todos los operadores)',
-            labels={'tipo_error': 'Tipo de Error', 'conteo': 'Cantidad'},
-            color='conteo',
-            color_continuous_scale='Reds'
+            y='porcentaje',
+            title='Porcentaje de cada tipo de error (todos los operadores)',
+            labels={'tipo_error': 'Tipo de Error', 'porcentaje': 'Porcentaje (%)'},
+            color='porcentaje',
+            color_continuous_scale='Reds',
+            text='porcentaje'   # muestra el porcentaje sobre la barra
         )
-        fig_pareto.update_layout(xaxis_tickangle=-45, showlegend=False)
+        fig_pareto.update_traces(
+            texttemplate='%{text:.1f}%',
+            textposition='outside'
+        )
+        fig_pareto.update_layout(
+            xaxis_tickangle=-45,
+            showlegend=False,
+            yaxis_ticksuffix='%'
+        )
         st.plotly_chart(fig_pareto, use_container_width=True)
 
         # --- Gráfico de barras apiladas por operador ---
