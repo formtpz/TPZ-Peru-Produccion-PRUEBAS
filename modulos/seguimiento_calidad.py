@@ -5,6 +5,7 @@ import numpy as np
 from datetime import datetime, timedelta
 import pytz
 from db import fetch_df
+import plotly.express as px
 
 # Zona horaria
 TZ = pytz.timezone('America/Guatemala')
@@ -25,7 +26,10 @@ def obtener_personal_asignado(supervisor_nombre):
 
 @st.cache_data(ttl=60)
 def cargar_datos_calidad(fechas, personal):
-    """Carga los registros de calidad (aprobados/rechazados) para los operadores seleccionados."""
+    """
+    Carga los registros de calidad (aprobados/rechazados) y tipos de error
+    para los operadores seleccionados.
+    """
     fecha_inicio, fecha_fin = fechas
     if not personal:
         return pd.DataFrame()
@@ -39,7 +43,8 @@ def cargar_datos_calidad(fechas, personal):
             operador_cc AS nombre,
             proceso,
             COALESCE(aprobados::int, 0) AS aprobados,
-            COALESCE(rechazados::int, 0) AS rechazados
+            COALESCE(rechazados::int, 0) AS rechazados,
+            tipos_de_errores
         FROM registro
         WHERE operador_cc = ANY(%s)
           AND NULLIF(TRIM(fecha), '')::date >= %s
@@ -58,16 +63,54 @@ def cargar_datos_calidad(fechas, personal):
     df['rechazados'] = pd.to_numeric(df['rechazados'], errors='coerce').fillna(0).astype(int)
 
     # Agrupar por fecha, operador y proceso (por si hay múltiples registros el mismo día)
+    # Para los tipos de error, concatenaremos los textos y luego los procesaremos por separado
     df = df.groupby(['fecha', 'nombre', 'proceso'], as_index=False).agg({
         'aprobados': 'sum',
-        'rechazados': 'sum'
+        'rechazados': 'sum',
+        'tipos_de_errores': lambda x: ', '.join(x.dropna().astype(str).str.strip().replace('', np.nan).dropna())
+        # Concatenamos todos los tipos de error del día/proceso, separados por coma
     })
+
+    # Reemplazar cadenas vacías o 'nan' por None
+    df['tipos_de_errores'] = df['tipos_de_errores'].replace(['', 'nan', 'None'], np.nan)
 
     return df
 
 
 # ============================================================
-# FUNCIÓN DE FORMATEO
+# FUNCIÓN PARA EXTRAER Y CONTAR TIPOS DE ERROR
+# ============================================================
+
+def procesar_tipos_de_error(df_calidad):
+    """
+    A partir del DataFrame con columna 'tipos_de_errores', genera un DataFrame
+    con columnas: nombre, tipo_error, conteo
+    donde cada tipo de error se separa por coma y se cuenta una vez por registro.
+    """
+    if df_calidad.empty or 'tipos_de_errores' not in df_calidad.columns:
+        return pd.DataFrame(columns=['nombre', 'tipo_error', 'conteo'])
+
+    # Filtrar solo registros que tengan algún error (tipos_de_errores no nulo)
+    df_err = df_calidad[df_calidad['tipos_de_errores'].notna()].copy()
+    if df_err.empty:
+        return pd.DataFrame(columns=['nombre', 'tipo_error', 'conteo'])
+
+    # Separar los tipos de error por coma y expandir en filas
+    df_err['lista_errores'] = df_err['tipos_de_errores'].str.split(',')
+    df_exploded = df_err.explode('lista_errores')
+
+    # Limpiar espacios y eliminar vacíos
+    df_exploded['tipo_error'] = df_exploded['lista_errores'].str.strip()
+    df_exploded = df_exploded[df_exploded['tipo_error'] != '']
+
+    # Contar por operador y tipo de error
+    conteo = df_exploded.groupby(['nombre', 'tipo_error']).size().reset_index(name='conteo')
+
+    return conteo
+
+
+# ============================================================
+# FUNCIÓN DE FORMATEO (COLORES CALIDAD)
 # ============================================================
 
 def color_calidad(val):
@@ -144,7 +187,7 @@ def render():
     )
     df_calidad['calidad'] = df_calidad['calidad'].round(1)
 
-    # --- Ordenar y seleccionar columnas finales ---
+    # --- Vista por proceso ---
     df_vista = df_calidad[['fecha', 'nombre', 'proceso', 'aprobados', 'rechazados', 'calidad']].copy()
     df_vista = df_vista.sort_values(['fecha', 'nombre', 'proceso']).reset_index(drop=True)
     df_vista.rename(columns={
@@ -156,13 +199,11 @@ def render():
         'calidad': 'Calidad (%)'
     }, inplace=True)
 
-    # --- Aplicar estilos ---
     styled = df_vista.style.map(color_calidad, subset=['Calidad (%)'])
-
     st.subheader("📊 Calidad por Operador y Proceso")
     st.dataframe(styled, use_container_width=True)
 
-    # --- Resumen rápido por operador (global) ---
+    # --- Resumen por operador (global) ---
     st.subheader("📋 Resumen por Operador (total del período)")
     resumen = df_calidad.groupby('nombre', as_index=False).agg({
         'aprobados': 'sum',
@@ -184,6 +225,36 @@ def render():
     resumen_vista = resumen[['Operador', 'Aprobados', 'Rechazados', 'Calidad (%)']]
     styled_resumen = resumen_vista.style.map(color_calidad, subset=['Calidad (%)'])
     st.dataframe(styled_resumen, use_container_width=True)
+
+    # --- GRÁFICO DE TIPOS DE ERROR POR OPERADOR ---
+    st.subheader("📊 Tipos de Errores por Operador")
+    df_errores = procesar_tipos_de_error(df_calidad)
+
+    if df_errores.empty:
+        st.info("No se encontraron registros de tipos de error en el período seleccionado.")
+    else:
+        # Crear gráfico de barras apiladas
+        fig = px.bar(
+            df_errores,
+            x='nombre',
+            y='conteo',
+            color='tipo_error',
+            title='Distribución de tipos de error por operador',
+            labels={'nombre': 'Operador', 'conteo': 'Cantidad de errores', 'tipo_error': 'Tipo de Error'},
+            barmode='stack'
+        )
+        fig.update_layout(xaxis_tickangle=-45)
+        st.plotly_chart(fig, use_container_width=True)
+
+        # También podemos mostrar una tabla con el detalle
+        with st.expander("📋 Ver tabla de errores"):
+            pivot = df_errores.pivot_table(
+                index='nombre',
+                columns='tipo_error',
+                values='conteo',
+                fill_value=0
+            ).astype(int)
+            st.dataframe(pivot)
 
     # --- Botón de actualización ---
     st.divider()
