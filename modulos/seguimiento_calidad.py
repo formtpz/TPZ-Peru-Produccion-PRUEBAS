@@ -203,9 +203,9 @@ def render():
     st.subheader("📊 Calidad por Operador y Proceso")
     st.dataframe(styled, use_container_width=True)
 
-    # --- Resumen por operador (global) ---
-    st.subheader("📋 Resumen por Operador (total del período)")
-    resumen = df_calidad.groupby('nombre', as_index=False).agg({
+    # --- Resumen por Operador y Proceso (total del período) ---
+    st.subheader("📋 Resumen por Operador y Proceso (total del período)")
+    resumen = df_calidad.groupby(['nombre', 'proceso'], as_index=False).agg({
         'aprobados': 'sum',
         'rechazados': 'sum'
     })
@@ -218,11 +218,12 @@ def render():
     resumen['calidad'] = resumen['calidad'].round(1)
     resumen.rename(columns={
         'nombre': 'Operador',
+        'proceso': 'Proceso',
         'aprobados': 'Aprobados',
         'rechazados': 'Rechazados',
         'calidad': 'Calidad (%)'
     }, inplace=True)
-    resumen_vista = resumen[['Operador', 'Aprobados', 'Rechazados', 'Calidad (%)']]
+    resumen_vista = resumen[['Operador', 'Proceso', 'Aprobados', 'Rechazados', 'Calidad (%)']]
     styled_resumen = resumen_vista.style.map(color_calidad, subset=['Calidad (%)'])
     st.dataframe(styled_resumen, use_container_width=True)
 
