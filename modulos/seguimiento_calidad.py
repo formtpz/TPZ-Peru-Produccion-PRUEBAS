@@ -228,7 +228,7 @@ def render():
 
     # --- GRÁFICO DE TIPOS DE ERROR POR OPERADOR ---
     st.subheader("📊 Tipos de Errores por Operador")
-    df_errores = procesar_tipos_de_error(df_calidad)
+    df_errores = procesar_tipo_de_error(df_calidad)
 
     if df_errores.empty:
         st.info("No se encontraron registros de tipos de error en el período seleccionado.")
