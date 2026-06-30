@@ -228,12 +228,28 @@ def render():
 
     # --- GRÁFICO DE TIPOS DE ERROR POR OPERADOR ---
     st.subheader("📊 Tipos de Errores por Operador")
-    df_errores = procesar_tipo_de_error(df_calidad)
+    df_errores = procesar_tipos_de_error(df_calidad)
 
     if df_errores.empty:
         st.info("No se encontraron registros de tipos de error en el período seleccionado.")
     else:
-        # Crear gráfico de barras apiladas
+        # --- Gráfico de barras simple: frecuencia total por tipo de error (Pareto) ---
+        errores_totales = df_errores.groupby('tipo_error')['conteo'].sum().reset_index()
+        errores_totales = errores_totales.sort_values('conteo', ascending=False)
+
+        fig_pareto = px.bar(
+            errores_totales,
+            x='tipo_error',
+            y='conteo',
+            title='Frecuencia total de tipos de error (todos los operadores)',
+            labels={'tipo_error': 'Tipo de Error', 'conteo': 'Cantidad'},
+            color='conteo',
+            color_continuous_scale='Reds'
+        )
+        fig_pareto.update_layout(xaxis_tickangle=-45, showlegend=False)
+        st.plotly_chart(fig_pareto, use_container_width=True)
+
+        # --- Gráfico de barras apiladas por operador ---
         fig = px.bar(
             df_errores,
             x='nombre',
