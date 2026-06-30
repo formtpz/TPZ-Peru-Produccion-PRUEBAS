@@ -44,7 +44,7 @@ def cargar_datos_calidad(fechas, personal):
             proceso,
             COALESCE(aprobados::int, 0) AS aprobados,
             COALESCE(rechazados::int, 0) AS rechazados,
-            tipos_de_errores
+            tipo_de_errores
         FROM registro
         WHERE operador_cc = ANY(%s)
           AND NULLIF(TRIM(fecha), '')::date >= %s
@@ -67,12 +67,12 @@ def cargar_datos_calidad(fechas, personal):
     df = df.groupby(['fecha', 'nombre', 'proceso'], as_index=False).agg({
         'aprobados': 'sum',
         'rechazados': 'sum',
-        'tipos_de_errores': lambda x: ', '.join(x.dropna().astype(str).str.strip().replace('', np.nan).dropna())
+        'tipo_de_errores': lambda x: ', '.join(x.dropna().astype(str).str.strip().replace('', np.nan).dropna())
         # Concatenamos todos los tipos de error del día/proceso, separados por coma
     })
 
     # Reemplazar cadenas vacías o 'nan' por None
-    df['tipos_de_errores'] = df['tipos_de_errores'].replace(['', 'nan', 'None'], np.nan)
+    df['tipo_de_errores'] = df['tipo_de_errores'].replace(['', 'nan', 'None'], np.nan)
 
     return df
 
@@ -81,22 +81,22 @@ def cargar_datos_calidad(fechas, personal):
 # FUNCIÓN PARA EXTRAER Y CONTAR TIPOS DE ERROR
 # ============================================================
 
-def procesar_tipos_de_error(df_calidad):
+def procesar_tipo_de_error(df_calidad):
     """
-    A partir del DataFrame con columna 'tipos_de_errores', genera un DataFrame
+    A partir del DataFrame con columna 'tipo_de_errores', genera un DataFrame
     con columnas: nombre, tipo_error, conteo
     donde cada tipo de error se separa por coma y se cuenta una vez por registro.
     """
-    if df_calidad.empty or 'tipos_de_errores' not in df_calidad.columns:
+    if df_calidad.empty or 'tipo_de_errores' not in df_calidad.columns:
         return pd.DataFrame(columns=['nombre', 'tipo_error', 'conteo'])
 
-    # Filtrar solo registros que tengan algún error (tipos_de_errores no nulo)
-    df_err = df_calidad[df_calidad['tipos_de_errores'].notna()].copy()
+    # Filtrar solo registros que tengan algún error (tipo_de_errores no nulo)
+    df_err = df_calidad[df_calidad['tipo_de_errores'].notna()].copy()
     if df_err.empty:
         return pd.DataFrame(columns=['nombre', 'tipo_error', 'conteo'])
 
     # Separar los tipos de error por coma y expandir en filas
-    df_err['lista_errores'] = df_err['tipos_de_errores'].str.split(',')
+    df_err['lista_errores'] = df_err['tipo_de_errores'].str.split(',')
     df_exploded = df_err.explode('lista_errores')
 
     # Limpiar espacios y eliminar vacíos
@@ -228,7 +228,7 @@ def render():
 
     # --- GRÁFICO DE TIPOS DE ERROR POR OPERADOR ---
     st.subheader("📊 Tipos de Errores por Operador")
-    df_errores = procesar_tipos_de_error(df_calidad)
+    df_errores = procesar_tipo_de_error(df_calidad)
 
     if df_errores.empty:
         st.info("No se encontraron registros de tipos de error en el período seleccionado.")
